@@ -60,6 +60,35 @@ const loadCompleted = () => {
   }
 }
 
+/* Refresh-sided thread cache: chats survive reloads even for guests. */
+const threadKey = (charId) => `medbot-thread-${charId}`
+const lessonKey = (charId) => `medbot-lesson-${charId}`
+
+const loadThread = (charId) => {
+  try {
+    const raw = JSON.parse(localStorage.getItem(threadKey(charId)) || '[]')
+    return Array.isArray(raw)
+      ? raw.filter((m) => m && typeof m.text === 'string' && (m.type === 'user' || m.type === 'bot')).slice(-60)
+      : []
+  } catch {
+    return []
+  }
+}
+
+const saveThread = (charId, list) => {
+  try {
+    localStorage.setItem(
+      threadKey(charId),
+      JSON.stringify(
+        list
+          .filter((m) => m && typeof m.text === 'string')
+          .slice(-60)
+          .map((m) => ({ type: m.type, text: m.text, charId: m.charId || charId })),
+      ),
+    )
+  } catch {}
+}
+
 const sessionId = (() => {
   let id = localStorage.getItem(SESSION_KEY)
   if (!id) {
@@ -78,7 +107,9 @@ export default function Chat() {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
-  const [activeLesson, setActiveLesson] = useState(null)
+  const [activeLesson, setActiveLesson] = useState(() => {
+    try { return localStorage.getItem(lessonKey(char.id)) || null } catch { return null }
+  })
   const [completed, setCompleted] = useState(loadCompleted)
   const [sideOpen, setSideOpen] = useState(false)
   const [readAloud, setReadAloud] = useState(() => {
@@ -156,9 +187,10 @@ export default function Chat() {
   /* Hush the narrator when leaving the chat room */
   useEffect(() => () => stopSpeaking(), [])
 
-  /* Welcome message per character */
+  /* Welcome message per character - or restore the thread you left behind */
   useEffect(() => {
-    setMessages([
+    const cached = loadThread(char.id)
+    setMessages(cached.length ? cached : [
       {
         id: 1,
         type: 'bot',
@@ -168,6 +200,18 @@ export default function Chat() {
     ])
     setInput('')
   }, [char.id])
+
+  /* Mirror every exchange locally so a refresh never drops the story */
+  useEffect(() => {
+    saveThread(char.id, messages)
+  }, [messages, char.id])
+
+  /* Keep the active lesson stable across refreshes too */
+  useEffect(() => {
+    try {
+      if (activeLesson) localStorage.setItem(lessonKey(char.id), activeLesson)
+    } catch {}
+  }, [activeLesson, char.id])
 
   /* Signed in? Pull history for this character from Supabase */
   useEffect(() => {
@@ -215,6 +259,11 @@ export default function Chat() {
 
   const whoTint = { '--who-tint': `var(${char.tintVar})` }
 
+  const chatHeaders = () =>
+    session?.access_token
+      ? { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }
+      : { 'Content-Type': 'application/json' }
+
   const sendMessage = async (text = input) => {
     const value = (text || '').trim()
     if (!value || isTyping) return
@@ -229,7 +278,7 @@ export default function Chat() {
       const [res] = await Promise.all([
         fetch('/api/chat', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: chatHeaders(),
           body: JSON.stringify({
             message: value,
             character: char.id,
@@ -277,7 +326,7 @@ export default function Chat() {
     setIsTyping(true)
     fetch('/api/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: chatHeaders(),
       body: JSON.stringify({
         message: `Let's start the lesson: ${lesson.title}`,
         character: char.id,

@@ -1,21 +1,37 @@
 # MedBot — Know your body, the friendly way
 
-MedBot is a **rule-based medical education chatbot** that teaches anatomy, wellness and first aid as a conversation. You choose a teacher character, pick from 17 lessons, quiz yourself, and watch your body actually move in an interactive **anatomy theatre** with voice-over narration.
+MedBot is an **AI-powered medical education tutor**. You pick a teacher character, thumb through 17 lessons, and get a genuinely conversational teacher: it explains, asks you a comprehension question after everything it teaches, judges your answer (kindly, with generous phrasing), teaches the full correct answer, and keeps the lesson going. Your chats, choices and progress follow you — refresh mid-lesson and it continues, sign in and it lives forever in your own database rows.
 
-It is intentionally **not an LLM app**: every answer comes from a hand-written, vetted knowledge base served by a small Express API, so responses are safe, consistent, and fast — and users can confidently complete lessons and quizzes.
+Plus a stage: an interactive **anatomy theatre** where nine organs physically move — pulsing heart, breathing lungs, swaying ribcage, flexing bicep, squeezing kidneys — and every reply is **narrated out loud** by the browser's speech engine.
+
+- **Frontend**: React 18 + Vite, framer-motion, custom Pollenair design system (warm cream, hairline cards, press-physics buttons, zero emoji — every icon is a stroke SVG)
+- **Teacher**: OpenRouter (selects the best **free** model at boot, rotates on rate limits/truncation)
+- **Memory + accounts**: Supabase (auth, Postgres with owner-only RLS)
+- **Only if it breaks**: a small Node/Express API that hosts the model call, lesson catalog and safety prompt
 
 ---
 
 ## Highlights
 
-- **Character chat** — three teachers with distinct styles (Maya the nurse, Alex the explorer, Riley the paramedic), each with a hand-drawn avatar and its own color identity.
-- **Full lesson catalog (17 topics)** across four categories: Body Basics, Health & Wellness, First Aid, Common Conditions. Ask "Give me a quiz" and the server tracks your session, reveals answers only after you reply, and marks the lesson complete.
-- **Anatomy theatre** (`/explore`) — a hand-drawn SVG torso where **nine organs actually move**: the brain shimmering, lungs inhaling (offset phases), heartbeat pulse, ribcage sway, flexing bicep, stomach churn, kidney squeeze and more. Pick a glowing hotspot or a tab, and a **browser voice-over narrates the organ** automatically.
-- **On-page QAI** — ask *How does it work? / Keep it healthy / A fun fact / Quiz me* right inside the theatre, type your own questions or quiz answers in a composer, and every reply is both rendered and **read aloud**.
-- **Read-aloud everywhere** — chat answers and theatre replies are narrated by the browser's speech engine (no cloud TTS, zero cost), with a one-click mute toggle that remembers your choice.
-- **Supabase accounts** — email/password sign-up, sign-in, and **Sign in with Google** (OAuth via Supabase). The UI adapts: signed-in users see their identity in the chat sidebar and landing nav.
-- **Cloud progress + history** — completed lessons upsert into a `progress` row and **the entire conversation persists in a `messages` table**, both locked with Row Level Security so each user only ever touches their own data. Not signed in? Progress silently falls back to localStorage.
-- **Pollenair design system** — warm cream canvas, hairline cards, hand-drawn accent underlines, press-physics buttons (3px "press" on click), word-by-word hero reveals, and **zero emoji** anywhere: every icon is a stroke-drawn SVG.
+### The AI teacher (`server/openrouter.js`)
+- **One brain, no rule base.** Every message — chat, lesson open, theatre QAI, typed quiz answer — is answered by an LLM with a written standing instruction.
+- **Character personas**: Maya (calm nurse, everyday analogies), Alex (playful explorer, fun-facts first), Riley (steady paramedic, step-then-why).
+- **Safety law baked in**: never diagnoses, never prescribes or doses, escalates emergencies to "contact your local emergency number", stays on health topics, and an honesty clause (answers your actual question first; admits uncertainty; never invents numbers).
+- **The teach-ask loop**: after every teaching turn it poses exactly one comprehension question drawn **only from material already taught**. Answer right → it confirms, teaches why, asks the next. Answer wrong → it teaches the correct answer without penalty.
+- **Quiz judging**: your answer is judged against the taught material (synonyms and partial facts accepted, generous). When essentially right, the lesson is silently awarded via a machine-read marker, stripped from your view.
+- **Grounding + memory** — the active lesson title is pinned and, for signed-in users, your last 14 conversation turns are re-read from your database rows before every reply, so it "continues from where it stopped", even days later.
+- **Resilience**: free models are picked runtime from OpenRouter's catalog (today: minimax-m3.1-flash, nemotron-3.5-super, xing4.0), reasoning-model truncation is filtered out, and any failure falls back politely rather than crashing.
+
+### Progress you can trust
+- Sign up with **email/password or Google** (outright OAuth with Supabase through `/login`).
+- `progress` table → one row per user (completed lessons), `messages` table → permanent chat history per character. Both **RLS-locked to the owner**: each user can only ever touch their own rows.
+- **Refresh-proof**: chats are mirrored locally as they happen and the DB wins when signed in — reopening a chat restores the entire conversation *and* the lesson you were teaching.
+- Guest mode works fully (device-only progress), with a polite "log in to keep your progress" nudge in the sidebar.
+
+### Design & motion
+- **Anatomy theatre** (`/explore`): 9 organs, glowing hotspots, spinning halo on the selected organ, reduced-motion aware.
+- **Voice-over** shared engine (`src/voice.js`): organ narration + chat reads its replies aloud (markdown-stripped) with a mute toggle that remembers itself; an equalizer animates while the narrator speaks.
+- Landing page with character cards, 17-lesson marquee, FAQ, and a wave close; press-physics buttons everywhere; the whole skin is one CSS file (starter + `.landing` + `.medi` layers).
 
 ---
 
@@ -23,36 +39,36 @@ It is intentionally **not an LLM app**: every answer comes from a hand-written, 
 
 | Layer | Choice |
 | --- | --- |
-| Frontend | React 18 + Vite 5, `framer-motion` (MotionConfig, page transitions), `react-router-dom` 6 |
-| Design | Pollenair skill system — CSS custom properties, `.landing` / `.medi` scopes, Geist + Sora + Geist Mono type |
-| Speech | Web `SpeechSynthesis` API (shared module `src/voice.js`) |
-| Auth + DB | Supabase (`@supabase/supabase-js`) — auth, Postgres with RLS |
-| Backend | Node + Express (`server/index.js`) — knowledge base, quiz engine, lesson/progress endpoints |
-| Tooling | concurrently (dev server + API), Vite proxy `/api` → `localhost:3001` |
+| Frontend | React 18, Vite 5, `framer-motion`, `react-router-dom` 6 |
+| Design system | Pollenair tokens (Geist / Sora / Geist Mono), custom press-3D buttons |
+| AI | OpenRouter chat completions, free-tier auto-selection, persona/safety system prompt |
+| Auth + DB | Supabase (email + Google OAuth; Postgres + RLS) |
+| API host | Express (Node) — chat proxy, catalog, safety tape; session memory for guests |
+| Speech | Web `SpeechSynthesis` (no cloud, no cost) |
 
 ---
 
 ## Project structure
 
 ```
-├─ server/index.js          Express API: knowledge base, quiz engine, endpoints
+├─ server/index.js          Express API: catalog, guest memory + record, progress, chat proxy
+├─ server/openrouter.js     FREE-model picking, persona/safety/teach-loop prompt, rotation
 ├─ src/
-│  ├─ App.jsx               Routes: / · /chat/:characterId · /explore · /login
-│  ├─ auth.jsx              AuthProvider + useAuth (session, signOut, display helpers)
-│  ├─ supabase.js           Supabase client (safe stub when .env keys are missing)
+│  ├─ App.jsx               Routes: / · /chat/:characterId · /explore · /login (+ transitions)
+│  ├─ auth.jsx              AuthProvider (session, signOut, display helpers)
+│  ├─ supabase.js           Client init + safe offline stub when .env keys are missing
 │  ├─ voice.js              speak / stopSpeaking / stripForSpeech — one voice at a time
-│  ├─ motion.jsx            Reveal / FloatCard primitives (framer-motion)
-│  ├─ index.css             Entire design system (starter + app layers, ~2,900 lines)
+│  ├─ motion.jsx            Reveal / FloatCard primitives
+│  ├─ index.css             Whole design system (~2,900 lines, starter + layers)
 │  └─ components/
-│     ├─ Landing.jsx        Marketing site: hero, characters, lessons, FAQ, footer
-│     ├─ Chat.jsx           Chat room: lessons sidebar, progress ring, messages
-│     ├─ Explore.jsx        Anatomy theatre: 9 organs, voice-over, QAI composer
+│     ├─ Landing.jsx        Marketing site (hero, characters, lessons marquee, FAQ)
+│     ├─ Chat.jsx           Lessons sidebar, progress ring, AI chat, refresh-proof restore
+│     ├─ Explore.jsx        Anatomy theatre: 9 organ scenes, narration, QAI + composer
 │     ├─ Login.jsx          Supabase sign in / sign up / Google
 │     ├─ icons.jsx          All SVG icons + hand-drawn character avatars
-│     └─ Accent.jsx         Ochre underline accent component
-├─ supabase/schema.sql      progress + messages tables with RLS policies
-├─ index.html               Fonts + favicon entry
-└─ public/favicon.svg       MedBot chat-bubble cross mark
+│     └─ Accent.jsx         Ochre underline accent
+├─ supabase/schema.sql      progress + messages tables with owner-only RLS
+└─ public/favicon.svg       MedBot mark
 ```
 
 ---
@@ -63,61 +79,67 @@ It is intentionally **not an LLM app**: every answer comes from a hand-written, 
 
 ```bash
 npm install
-npm start          # runs Express API (3001) + Vite dev server (5173) together
+npm start     # Express API (3001) + Vite dev server (5173)
 ```
 
-Open http://localhost:5173. The chat and theatre work **immediately** as a guest (progress kept in localStorage); sign in to sync to the cloud.
+Open http://localhost:5173 — chat and theatre work immediately as a guest.
 
-> `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` come from **Supabase → Project Settings → API**. `src/supabase.js` detects missing keys and falls back to a stub, so the app never crashes without them.
+### 2. Environment (`.env`, never committed)
 
-### 2. Supabase setup (one-time)
+| Key | Purpose |
+| --- | --- |
+| `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` | Supabase project (from Project Settings → API) |
+| `OPENROUTER_API_KEY` | OpenRouter key: server-side only — the UI never touches it |
+| `DATABASE_URL` | Direct Postgres link (optional, for the schema script/tools) |
 
-1. Create a project at [supabase.com](https://supabase.com), grab the **URL** and **anon key** into `.env`.
-2. Open **SQL Editor** and run everything in [`supabase/schema.sql`](supabase/schema.sql):
-   - `progress` table (one row per user: completed lessons array) with owner-only RLS.
-   - `messages` table (per-message chat history per character) with owner-only RLS.
-3. **Authentication → Providers → Google**: paste your Google OAuth client ID + secret. (Get them from [Google Cloud Console](https://console.cloud.google.com) → Credentials → OAuth client → *Web application*, registering the redirect URI `https://<your-ref>.supabase.co/auth/v1/callback`.)
-4. **Authentication → URL Configuration**: set Site URL (e.g. `http://localhost:5173`) and redirect URLs (`http://localhost:5173/**`).
+### 3. Supabase setup (one-time)
 
-### 3. Production build
+1. Create a project, drop the URL + anon key into `.env`.
+2. Run [`supabase/schema.sql`](supabase/schema.sql) once in the **SQL Editor** (creates `progress` + `messages` with owner-only RLS).
+3. **Auth → Providers → Google**: paste an OAuth client ID + secret from Google Cloud Console with redirect `https://<ref>.supabase.co/auth/v1/callback`.
+4. **Auth → URL Configuration**: Site URL + redirect (`http://localhost:5173/**`).
+
+### 4. Deploy
 
 ```bash
-npm run build      # outputs dist/
-npm run preview    # serve the build locally
+npm run build    # dist/
+npm run preview  # local check of the build
 ```
 
 ---
 
 ## API
 
-| Route | Purpose |
+| Route | Notes |
 | --- | --- |
-| `GET /api/lessons` | Lesson catalog grouped by category |
-| `GET /api/lessons/:id` | One lesson's full body |
-| `POST /api/chat` | `{ message, character, lesson, sessionId }` → knowledge-base reply; if a quiz is pending for the session, treats the message as the quiz answer and returns `lessonCompleted` |
-| `POST /api/progress` | `{ sessionId, completed }` — guest progress backup |
-| `GET /api/progress?sessionId=` | Guest progress |
-
-Signed-in users bypass the guest progress endpoints: completed lessons are upserted directly to `progress`, and every chat line is inserted into `messages` keyed by character.
+| `POST /api/chat` | `{ message, character, lesson, sessionId }`. Send `Authorization: Bearer <supabase-access-token>` when signed in → server re-reads your history (RLS applies) and re-binds your last lesson automatically. Returns `{ response, lessonCompleted }` |
+| `GET /api/lessons` / `GET /api/lessons/:id` | Catalog only; body knowledge lives in the model |
+| `POST/GET /api/progress` | Guest progress mirror (accounted users bypass this via Supabase) |
 
 ---
 
 ## Characters
 
-| Character | Style | Drives |
+| Character | Voice | Drives |
 | --- | --- | --- |
-| **Maya** (leaf green) | Calm nurse, patient explanations | Body Basics |
-| **Alex** (teal) | Curious explorer, loves fun facts | Health & Wellness |
-| **Riley** (sand/terra) | Reassuring paramedic, safety-first | First Aid |
+| **Maya** (leaf green) | Calm nurse, gentle analogies | Body Basics |
+| **Alex** (teal) | Curious explorer, leads with a wow fact | Health & Wellness |
+| **Riley** (sand/terra) | Reassuring paramedic: step, then why | First Aid |
+
+---
+
+## Anatomy theatre gallery
+
+Brain (shimmer) · Lungs (offset breathing) · Heart (double pulse) · Liver (drift) · Stomach (churn) · Gut (peristalsis waves) · Bones (ribcage sway) · Muscle (flex pump) · Kidneys (filter squeeze) — each with narration, a four-chip QAI and a typed composer.
 
 ---
 
 ## Roadmap
 
-- Smarter request matching (lightweight NLP/embeddings) while keeping answers vetted.
-- More theatre scenes (circulatory journey, immune cells, sleep cycle).
-- Per-topic certificate download.
-- Deploy: static front to Vercel/Netlify, API to Render/Railway, swap the dev proxy for CORS.
+- Streaming replies (SSE) so the narrated teaching starts while text types out.
+- Lesson certificates once all check-questions in a topic are passed.
+- Larger theatre casts: circulatory journey, immune cells, sleep cycle.
+- Production deploy guide (Vercel + any host for `/server`, OpenRouter + Supabase in production env).
 
 ---
 

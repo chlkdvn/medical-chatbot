@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { MedLogo, IcoBrain, IcoLungs, IcoHeart, IcoLiver, IcoStomach, IcoGut, IcoBone, IcoDumbbell, IcoDrop, SendArrow } from './icons'
 import { Accent } from './Accent'
 import { speak as narrate, stopSpeaking, stripForSpeech, canSpeak } from '../voice'
+import { useAuth } from '../auth'
 
 const SESSION_KEY = 'medbot-session'
 
@@ -176,6 +177,7 @@ function richText(text) {
 
 export default function Explore() {
   const navigate = useNavigate()
+  const { session } = useAuth()
   const [params] = useSearchParams()
   const focus = ORGAN_BY_LESSON[params.get('focus')] || 'brain'
 
@@ -230,7 +232,10 @@ export default function Explore() {
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
         body: JSON.stringify({ message: wire, character: 'alex', lesson: o.lessonId, sessionId }),
       })
       const data = await res.json()
